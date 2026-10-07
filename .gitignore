@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.py[cod]
+logs/*
+!logs/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
+reports

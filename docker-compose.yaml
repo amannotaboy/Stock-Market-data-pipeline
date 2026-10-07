@@ -1,0 +1,121 @@
+services:
+  hdfs-namenode:
+    build: ./hdfs
+    image: stock-market-hadoop:3.4.3
+    hostname: namenode
+    command: ["hdfs", "namenode"]
+    environment:
+      ENSURE_NAMENODE_DIR: /hadoop/dfs/name/current
+    ports:
+      - "127.0.0.1:9870:9870"
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - hdfs_namenode_data:/hadoop/dfs
+      - ./hdfs-conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./hdfs-conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9870/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  hdfs-datanode-1:
+    build: ./hdfs
+    image: stock-market-hadoop:3.4.3
+    hostname: datanode1
+    command: ["hdfs", "datanode"]
+    environment:
+      WAITFOR: namenode:9000
+    volumes:
+      - hdfs_datanode_1_data:/hadoop/dfs
+      - ./hdfs-conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./hdfs-conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    depends_on:
+      hdfs-namenode:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -report 2>/dev/null | grep -q 'Live datanodes (2)'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  hdfs-datanode-2:
+    build: ./hdfs
+    image: stock-market-hadoop:3.4.3
+    hostname: datanode2
+    command: ["hdfs", "datanode"]
+    environment:
+      WAITFOR: namenode:9000
+    volumes:
+      - hdfs_datanode_2_data:/hadoop/dfs
+      - ./hdfs-conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./hdfs-conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    depends_on:
+      hdfs-namenode:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -report 2>/dev/null | grep -q 'Live datanodes (2)'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  airflow:
+    build: .
+    image: stock-market-airflow:local
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_DATABASE_URL:?Set AIRFLOW_DATABASE_URL in .env}
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+      DNSE_API_KEY: ${DNSE_API_KEY:-}
+      DNSE_API_SECRET: ${DNSE_API_SECRET:-}
+      DNSE_API_VERSION: ${DNSE_API_VERSION:-2026-07-23}
+      DATE_HEADER: ${DATE_HEADER:-X-Aux-Date}
+      DNSE_SYMBOLS: ${DNSE_SYMBOLS:-ACB}
+      DNSE_INDEX_SYMBOLS: ${DNSE_INDEX_SYMBOLS:-VNINDEX,VN30}
+      DNSE_RESOLUTION: ${DNSE_RESOLUTION:-1D}
+      DNSE_MARKET_MAX_SYMBOLS: ${DNSE_MARKET_MAX_SYMBOLS:-0}
+      DNSE_MARKET_RESOLUTION: ${DNSE_MARKET_RESOLUTION:-1}
+      DNSE_MARKET_LOOKBACK_DAYS: ${DNSE_MARKET_LOOKBACK_DAYS:-1}
+      DNSE_INSTRUMENT_PAGE_SIZE: ${DNSE_INSTRUMENT_PAGE_SIZE:-100}
+      DNSE_INSTRUMENT_MAX_PAGES: ${DNSE_INSTRUMENT_MAX_PAGES:-30}
+      DNSE_MARKET_SYMBOL_REGEX: ${DNSE_MARKET_SYMBOL_REGEX:-^[A-Z][A-Z][A-Z]$}
+      DNSE_MARKET_STOCK_GROUP_IDS: ${DNSE_MARKET_STOCK_GROUP_IDS:-ST}
+      DNSE_REQUEST_DELAY_SECONDS: ${DNSE_REQUEST_DELAY_SECONDS:-0.15}
+      DNSE_MARKET_SYMBOLS: ${DNSE_MARKET_SYMBOLS:-}
+      STOCK_STATE_DATABASE_URL: ${STOCK_STATE_DATABASE_URL:?Set STOCK_STATE_DATABASE_URL in .env}
+      RAW_STORAGE: hdfs
+      HDFS_WEBHDFS_URL: http://hdfs-namenode:9870
+      HDFS_NAMENODE_RPC: hdfs://namenode:9000
+      HDFS_RAW_ROOT: /raw
+      HDFS_USER: airflow
+      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+      PYTHONPATH: /opt/airflow/src
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src:ro
+      - ./logs:/opt/airflow/logs
+    depends_on:
+      hdfs-namenode:
+        condition: service_healthy
+      hdfs-datanode-1:
+        condition: service_healthy
+      hdfs-datanode-2:
+        condition: service_healthy
+    command: standalone
+    restart: unless-stopped
+
+volumes:
+  hdfs_namenode_data:
+  hdfs_datanode_1_data:
+  hdfs_datanode_2_data:
