@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 logs/*
 !logs/.gitkeep
-data/raw/*
+data/
 !data/raw/.gitkeep
 reports
+.dockerignore

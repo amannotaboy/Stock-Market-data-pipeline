@@ -1,0 +1,1 @@
+{"source":"dnse","entity":"ohlc","symbol":"ACB","resolution":"1","requested_from":1759683600,"requested_to":1762448400,"from_date_local":"2025-10-06","to_date_local_inclusive":"2025-11-06","fetched_at_utc":"2026-10-06T10:35:25.747853+00:00","dag_run_id":"manual__2026-10-06T10:35:20+00:00","response":{"t":null,"o":null,"h":null,"l":null,"c":null,"v":null,"nextTime":0}}

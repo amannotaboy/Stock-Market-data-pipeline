@@ -15,6 +15,9 @@ from zoneinfo import ZoneInfo
 import psycopg2
 import requests
 
+import boto3
+from botocore.config import Config
+
 BASE_URL = "https://openapi.dnse.com.vn"
 OHLC_PATH = "/price/ohlc"
 INSTRUMENTS_PATH = "/market/instruments"
@@ -120,7 +123,7 @@ def _request_instruments(symbols: list[str]) -> dict | list:
 
 
 def _request_instrument_page(page: int, limit: int) -> dict | list:
-    """Fetch one unfiltered instrument page for the market-universe DAG."""
+    
     return _request_json(
         INSTRUMENTS_PATH,
         {
@@ -135,7 +138,7 @@ def _request_instrument_page(page: int, limit: int) -> dict | list:
 
 
 def _extract_instrument_rows(payload: dict | list) -> list[dict]:
-    """Handle the list and common envelope shapes used by the instruments API."""
+    
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
     if not isinstance(payload, dict):
@@ -306,9 +309,11 @@ def _write_raw(
     run_id: str,
     ingest_date: date,
     entity: str = "ohlc",
-) -> str:
+):
     relative_path = _raw_relative_path(symbol, resolution, run_id, ingest_date, entity)
     storage = os.getenv("RAW_STORAGE", "local").strip().lower()
+    if storage == "minio":
+        return _write_raw_minio(payload, relative_path)
     if storage == "hdfs":
         return _write_raw_hdfs(payload, relative_path)
     if storage == "local":
@@ -428,8 +433,6 @@ def run_collection(**context):
                 _record_finish(conn, run_id, symbol, resolution, start_date, end_date, "failed", error_message=str(exc)[:4000])
                 errors.append(f"{symbol}: {exc}")
 
-        # Index OHLC is collected alongside stock OHLC so Gold can compare each
-        # stock's return with VNINDEX/VN30 over the same dates.
         for index_symbol in index_symbols:
             status_key = f"INDEX:{index_symbol}"
             _record_start(conn, run_id, status_key, resolution, start_date, end_date, attempt)
@@ -507,11 +510,7 @@ def run_collection(**context):
 
 
 def run_market_universe_daily(**context):
-    """Collect the paginated stock universe and its OHLC data.
-
-    The scheduled run uses environment defaults (full universe, 1-minute candles,
-    short rolling window). Manual runs can override dates, resolution and symbol cap.
-    """
+    
     database_url = _required_env("STOCK_STATE_DATABASE_URL")
     conf = (context.get("dag_run").conf or {}) if context.get("dag_run") else {}
     run_id = context.get("run_id") or "manual-" + uuid4().hex
@@ -713,3 +712,28 @@ def run_market_universe_daily(**context):
 
     if all_errors:
         raise RuntimeError("Market-universe collection had failures: " + " | ".join(all_errors))
+def _write_raw_minio(payload: dict, relative_path: str) -> str:
+    bucket = os.environ["MINIO_BUCKET_RAW"]
+    endpoint = os.environ["MINIO_ENDPOINT_URL"]
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=os.environ["admin"],
+        aws_secret_access_key=os.environ["namhoang16112005"],
+        region_name=os.getenv("MINIO_REGION", "us-east-1"),
+        config=Config(s3={"addressing_style": "path"}),
+    )
+
+    key = relative_path.lstrip("/")
+    body = json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+
+    client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=body,
+        ContentType="application/json",
+    )
+    return f"s3://{bucket}/{key}"

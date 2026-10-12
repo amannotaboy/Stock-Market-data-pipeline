@@ -24,7 +24,7 @@ services:
   hdfs-datanode-1:
     build: ./hdfs
     image: stock-market-hadoop:3.4.3
-    hostname: datanode1
+    hostname: datanode1.localhost
     command: ["hdfs", "datanode"]
     environment:
       WAITFOR: namenode:9000
@@ -32,6 +32,10 @@ services:
       - hdfs_datanode_1_data:/hadoop/dfs
       - ./hdfs-conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
       - ./hdfs-conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    networks:
+      default:
+        aliases:
+          - datanode1
     depends_on:
       hdfs-namenode:
         condition: service_healthy
@@ -41,19 +45,25 @@ services:
       timeout: 10s
       retries: 30
       start_period: 30s
+    ports:
+      - "127.0.0.1:9864:9864"
     restart: unless-stopped
 
   hdfs-datanode-2:
     build: ./hdfs
     image: stock-market-hadoop:3.4.3
-    hostname: datanode2
+    hostname: datanode2.localhost
     command: ["hdfs", "datanode"]
     environment:
       WAITFOR: namenode:9000
     volumes:
       - hdfs_datanode_2_data:/hadoop/dfs
       - ./hdfs-conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
-      - ./hdfs-conf/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+      - ./hdfs-conf/hdfs-site-datanode2.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    networks:
+      default:
+        aliases:
+          - datanode2
     depends_on:
       hdfs-namenode:
         condition: service_healthy
@@ -63,6 +73,8 @@ services:
       timeout: 10s
       retries: 30
       start_period: 30s
+    ports: 
+      - "127.0.0.1:9865:9865"
     restart: unless-stopped
 
   airflow:
@@ -92,7 +104,12 @@ services:
       DNSE_REQUEST_DELAY_SECONDS: ${DNSE_REQUEST_DELAY_SECONDS:-0.15}
       DNSE_MARKET_SYMBOLS: ${DNSE_MARKET_SYMBOLS:-}
       STOCK_STATE_DATABASE_URL: ${STOCK_STATE_DATABASE_URL:?Set STOCK_STATE_DATABASE_URL in .env}
-      RAW_STORAGE: hdfs
+      RAW_STORAGE: minio
+      MINIO_ENDPOINT_URL: http://minio:9000
+      MINIO_BUCKET_RAW: stock-raw
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY in .env}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY in .env}
+      MINIO_REGION: us-east-1
       HDFS_WEBHDFS_URL: http://hdfs-namenode:9870
       HDFS_NAMENODE_RPC: hdfs://namenode:9000
       HDFS_RAW_ROOT: /raw
@@ -114,8 +131,21 @@ services:
         condition: service_healthy
     command: standalone
     restart: unless-stopped
+  minio:
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "9100:9000"
+      - "127.0.0.1:9101:9001"
+    volumes: 
+      - minio_data:/data
+    restart: unless-stopped
 
 volumes:
   hdfs_namenode_data:
   hdfs_datanode_1_data:
   hdfs_datanode_2_data:
+  minio_data:
