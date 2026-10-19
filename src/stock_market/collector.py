@@ -719,8 +719,8 @@ def _write_raw_minio(payload: dict, relative_path: str) -> str:
     client = boto3.client(
         "s3",
         endpoint_url=endpoint,
-        aws_access_key_id=os.environ["admin"],
-        aws_secret_access_key=os.environ["namhoang16112005"],
+        aws_access_key_id=_required_env("MINIO_ACCESS_KEY"),
+        aws_secret_access_key=_required_env("MINIO_SECRET_KEY"),
         region_name=os.getenv("MINIO_REGION", "us-east-1"),
         config=Config(s3={"addressing_style": "path"}),
     )
